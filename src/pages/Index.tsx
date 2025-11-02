@@ -86,7 +86,7 @@ const Index = () => {
 
   const salesTrend = useMemo(() => {
     const salesByDate = salesData.reduce((acc, record) => {
-      const date = new Date(record.dateOfSale).toLocaleDateString("en-US", {
+      const date = new Date(record.timestamp).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
       });
