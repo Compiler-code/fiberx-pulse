@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -7,6 +8,7 @@ import { motion } from "framer-motion";
 import { DollarSign, TrendingUp, Package, Award } from "lucide-react";
 
 export default function SalesReps() {
+  const navigate = useNavigate();
   const { data: salesData, loading } = useGoogleSheets();
 
   const repStats = useMemo(() => {
@@ -73,7 +75,10 @@ export default function SalesReps() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1, duration: 0.3 }}
           >
-            <Card className="hover:shadow-xl transition-all duration-300 border-l-4 border-l-primary/30 hover:border-l-primary h-full">
+            <Card
+              className="hover:shadow-xl transition-all duration-300 border-l-4 border-l-primary/30 hover:border-l-primary h-full cursor-pointer"
+              onClick={() => navigate(`/sales-reps/${encodeURIComponent(rep.name)}`)}
+            >
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3 sm:gap-4">
                   <Avatar className="h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/20">
