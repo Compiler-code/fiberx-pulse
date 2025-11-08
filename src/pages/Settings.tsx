@@ -5,11 +5,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { Save, RefreshCw, Database, Bell, Shield } from "lucide-react";
+import { Save, RefreshCw, Database, Bell, Shield, GitMerge, AlertTriangle } from "lucide-react";
+import { updatePassword, mergeReps } from "@/utils/settingsApi";
+import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 
 export default function Settings() {
+  const { data: salesData, refetch } = useGoogleSheets();
   const [autoRefresh, setAutoRefresh] = useState(() => {
     const saved = localStorage.getItem("autoRefresh");
     return saved ? JSON.parse(saved) : true;
@@ -20,6 +25,15 @@ export default function Settings() {
   });
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  const [fromRep, setFromRep] = useState("");
+  const [toRep, setToRep] = useState("");
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [showMergeConfirm, setShowMergeConfirm] = useState(false);
+
+  const uniqueReps = Array.from(new Set(salesData.map(r => r.salesRepName))).sort();
 
   const handleSave = () => {
     localStorage.setItem("autoRefresh", JSON.stringify(autoRefresh));
@@ -30,15 +44,25 @@ export default function Settings() {
     });
   };
 
-  const handlePasswordChange = () => {
-    if (!currentPassword || !newPassword) {
+  const handlePasswordChange = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
       toast({
         title: "Validation Error",
-        description: "Please fill in both password fields.",
+        description: "Please fill in all password fields.",
         variant: "destructive",
       });
       return;
     }
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Validation Error",
+        description: "New password and confirmation password do not match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (newPassword.length < 6) {
       toast({
         title: "Validation Error",
@@ -47,13 +71,76 @@ export default function Settings() {
       });
       return;
     }
-    localStorage.setItem("dashboardPassword", newPassword);
-    setCurrentPassword("");
-    setNewPassword("");
-    toast({
-      title: "Password Changed",
-      description: "Your password has been updated successfully.",
-    });
+
+    if (currentPassword === newPassword) {
+      toast({
+        title: "Validation Error",
+        description: "New password must be different from current password.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      await updatePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      toast({
+        title: "Password Changed",
+        description: "Your password has been updated successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Password Change Failed",
+        description: error instanceof Error ? error.message : "Failed to change password",
+        variant: "destructive",
+      });
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const handleMergeReps = async () => {
+    if (!fromRep || !toRep) {
+      toast({
+        title: "Validation Error",
+        description: "Please select both source and destination rep.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (fromRep === toRep) {
+      toast({
+        title: "Validation Error",
+        description: "Source and destination reps cannot be the same.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMergeLoading(true);
+    try {
+      const result = await mergeReps(fromRep, toRep);
+      toast({
+        title: "Merge Successful",
+        description: result.message,
+      });
+      setFromRep("");
+      setToRep("");
+      setShowMergeConfirm(false);
+      await refetch();
+    } catch (error) {
+      toast({
+        title: "Merge Failed",
+        description: error instanceof Error ? error.message : "Failed to merge reps",
+        variant: "destructive",
+      });
+    } finally {
+      setMergeLoading(false);
+    }
   };
 
   return (
@@ -175,9 +262,9 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="current-password" className="text-sm">Current Password</Label>
-              <Input 
-                id="current-password" 
-                type="password" 
+              <Input
+                id="current-password"
+                type="password"
                 placeholder="••••••••"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
@@ -185,20 +272,117 @@ export default function Settings() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-password" className="text-sm">New Password</Label>
-              <Input 
-                id="new-password" 
-                type="password" 
+              <Input
+                id="new-password"
+                type="password"
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </div>
-            <Button 
-              variant="secondary" 
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password" className="text-sm">Confirm New Password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+            <Button
+              variant="secondary"
               className="w-full sm:w-auto"
               onClick={handlePasswordChange}
+              disabled={passwordLoading}
             >
-              Change Password
+              {passwordLoading ? "Updating..." : "Change Password"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow border-orange-200">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="bg-orange-100 rounded-lg p-2">
+                <GitMerge className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <CardTitle className="text-base sm:text-lg">Merge Sales Reps</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">
+                  Move sales from one rep to another
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-orange-800">
+                This action will reassign all sales from one rep to another in your Google Sheet.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="from-rep" className="text-sm">From Rep (Source)</Label>
+              <select
+                id="from-rep"
+                value={fromRep}
+                onChange={(e) => setFromRep(e.target.value)}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+              >
+                <option value="">Select source rep...</option>
+                {uniqueReps.map((rep) => (
+                  <option key={rep} value={rep}>
+                    {rep}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="to-rep" className="text-sm">To Rep (Destination)</Label>
+              <select
+                id="to-rep"
+                value={toRep}
+                onChange={(e) => setToRep(e.target.value)}
+                className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+              >
+                <option value="">Select destination rep...</option>
+                {uniqueReps.map((rep) => (
+                  <option key={rep} value={rep}>
+                    {rep}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <AlertDialog open={showMergeConfirm} onOpenChange={setShowMergeConfirm}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm Merge Sales Reps</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will move all sales from <span className="font-semibold text-foreground">{fromRep}</span> to{" "}
+                    <span className="font-semibold text-foreground">{toRep}</span> in your Google Sheet. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="flex gap-2">
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleMergeReps}
+                    disabled={mergeLoading}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {mergeLoading ? "Merging..." : "Confirm Merge"}
+                  </AlertDialogAction>
+                </div>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto border-orange-200 text-orange-600 hover:bg-orange-50"
+              onClick={() => setShowMergeConfirm(true)}
+              disabled={!fromRep || !toRep || mergeLoading}
+            >
+              <GitMerge className="h-4 w-4 mr-2" />
+              Merge Sales Reps
             </Button>
           </CardContent>
         </Card>
